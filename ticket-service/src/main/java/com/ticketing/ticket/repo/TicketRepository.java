@@ -8,6 +8,11 @@ import com.ticketing.ticket.domain.Ticket;
 import com.ticketing.ticket.domain.TicketStatus;
 
 public interface TicketRepository extends JpaRepository<Ticket, Long>{
+	
 	List<Ticket> findByStatus(TicketStatus status);
+    List<Ticket> findByStatusNot(TicketStatus status);
+
+
+
 
 }

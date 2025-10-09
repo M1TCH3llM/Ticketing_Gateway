@@ -6,6 +6,13 @@
   <title>Ticketing Dashboard</title>
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"
         integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+  <style>
+    .edit-row-highlight { outline: 2px dashed rgba(255,255,255,.2); outline-offset: 2px; border-radius: 8px; }
+    .w-28rem { max-width: 28rem; }
+    .w-18rem { max-width: 18rem; }
+    .w-12rem { max-width: 12rem; }
+    .small-muted { font-size: .85rem; color: #9aa0a6; }
+  </style>
 </head>
 <body class="bg-dark text-light">
 
@@ -18,8 +25,8 @@
     </button>
     <div id="nav" class="collapse navbar-collapse">
       <ul class="navbar-nav me-auto mb-2 mb-lg-0">
-        <li class="nav-item"><a class="nav-link" href="/health">Health</a></li>
         <li class="nav-item"><a class="nav-link active" href="/dashboard">Dashboard</a></li>
+        <li class="nav-item"><a class="nav-link" href="/history">History</a></li>
       </ul>
       <div class="d-flex align-items-center gap-3">
         <span class="text-secondary small">Signed in as
@@ -65,7 +72,8 @@
           <h4 class="card-title mb-3">Welcome</h4>
           <p class="card-text">Hello, <span class="fw-semibold" th:text="${username}">user</span>!</p>
           <p class="mb-1 text-secondary">Your roles:</p>
-          <div class="d-flex flex-wrap gap-2">
+          <!-- Roles badges for JS -->
+          <div class="d-flex flex-wrap gap-2" id="roles-badges">
             <span th:if="${authorities == null}" class="badge text-bg-secondary">none</span>
             <span th:each="a : ${authorities}" class="badge text-bg-info">
               <span th:text="${a.authority}">ROLE_USER</span>
@@ -87,55 +95,56 @@
       </div>
     </div>
   </div>
-  
+
+  <!-- Tickets -->
   <div class="card bg-dark border-secondary shadow-sm mt-4">
-      <div class="card-body">
-        <div class="d-flex justify-content-between align-items-center">
-          <h5 class="card-title mb-0">Tickets</h5>
-          <button id="btn-refresh" class="btn btn-outline-light btn-sm">Refresh</button>
-        </div>
-        <p class="text-secondary small mb-3">
-          Data from ticket-service (http://localhost:8081/api/tickets)
-        </p>
-
-        <div class="table-responsive">
-          <table class="table table-dark table-striped align-middle mb-3" id="tickets-table">
-            <thead>
-            <tr>
-              <th style="width:72px">ID</th>
-              <th>Title</th>
-              <th>Status</th>
-              <th>Opened By</th>
-              <th>Assigned To</th>
-              <th>Created</th>
-              <th style="width:220px">Actions</th>
-            </tr>
-            </thead>
-            <tbody>
-            <!-- rows injected by JS -->
-            </tbody>
-          </table>
-        </div>
-
-        <!-- Create form -->
-		<form id="create-ticket" class="row g-2" enctype="multipart/form-data">
-		  <div class="col-md-4">
-		    <input type="text" class="form-control bg-black text-light border-secondary" id="title" placeholder="Title" required>
-		  </div>
-		  <div class="col-md-4">
-		    <input type="text" class="form-control bg-black text-light border-secondary" id="description" placeholder="Description">
-		  </div>
-		  <div class="col-md-4">
-		    <input type="file" class="form-control bg-black text-light border-secondary" id="attachment" accept="*/*">
-		  </div>
-		  <div class="col-12 d-grid">
-		    <button class="btn btn-info" type="submit">Create Ticket</button>
-		  </div>
-		</form>
-
-        <div id="tickets-alert" class="text-secondary small mt-2"></div>
+    <div class="card-body">
+      <div class="d-flex justify-content-between align-items-center">
+        <h5 class="card-title mb-0">Tickets</h5>
+        <button id="btn-refresh" class="btn btn-outline-light btn-sm">Refresh</button>
       </div>
+      <p class="text-secondary small mb-3">
+        Data from ticket-service (http://localhost:8081/api/tickets)
+      </p>
+
+      <div class="table-responsive">
+        <table class="table table-dark table-striped align-middle mb-3" id="tickets-table">
+          <thead>
+          <tr>
+            <th style="width:72px">ID</th>
+            <th>Title</th>
+            <th>Status</th>
+            <th>Opened By</th>
+            <th>Assigned To</th>
+            <th>Created</th>
+            <th style="width:420px">Actions</th>
+          </tr>
+          </thead>
+          <tbody>
+          <!-- rows injected by JS -->
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Create form -->
+      <form id="create-ticket" class="row g-2" enctype="multipart/form-data">
+        <div class="col-md-4">
+          <input type="text" class="form-control bg-black text-light border-secondary" id="title" placeholder="Title" required>
+        </div>
+        <div class="col-md-4">
+          <input type="text" class="form-control bg-black text-light border-secondary" id="description" placeholder="Description">
+        </div>
+        <div class="col-md-4">
+          <input type="file" class="form-control bg-black text-light border-secondary" id="attachment" accept="*/*">
+        </div>
+        <div class="col-12 d-grid">
+          <button class="btn btn-info" type="submit">Create Ticket</button>
+        </div>
+      </form>
+
+      <div id="tickets-alert" class="text-secondary small mt-2"></div>
     </div>
+  </div>
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
@@ -145,280 +154,329 @@
         integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo="
         crossorigin="anonymous"></script>
 <script>
-  (function () {
-    const API_BASE = "http://localhost:8081/api/tickets";
-    const STATUSES = ["SUBMITTED","APPROVED","REJECTED","IN_PROGRESS","RESOLVED","REOPENED","CLOSED"];
+(function () {
+  const API_BASE = "http://localhost:8081/api/tickets";
+  const ALL_STATUSES = ["SUBMITTED","APPROVED","REJECTED","IN_PROGRESS","RESOLVED","REOPENED","CLOSED"];
 
-    const $tableBody = $("#tickets-table tbody");
-    const $alert = $("#tickets-alert");
-    const $btnRefresh = $("#btn-refresh");
-    const $form = $("#create-ticket");
-    const $title = $("#title");
-    const $description = $("#description");
-	
-	function isManager() { return hasRole("ROLE_MANAGER"); }
-	function canApproveReject(ticket) {
-	  return isManager() && (ticket.status === "SUBMITTED");
-	}
-	
-	// derive roles from badges that Thymeleaf rendered
-	  function getRolesFromPage() {
-	    const badges = Array.from(document.querySelectorAll('[th\\:each="a : ${authorities}"], .badge'))
-	      .map(b => b.textContent?.trim())
-	      .filter(Boolean);
-	    // Expect ROLE
-	    return badges.filter(x => x.startsWith('ROLE_'));
-	  }
-	  function hasRole(r) { return getRolesFromPage().includes(r); }
+  const $tableBody = $("#tickets-table tbody");
+  const $alert = $("#tickets-alert");
 
-    function fmt(ts) {
-      if (!ts) return "";
-      try { return new Date(ts).toLocaleString(); } catch { return ts; }
+  // ---- Roles ----
+  function getRolesFromPage() {
+    const root = document.getElementById("roles-badges");
+    if (!root) return [];
+    return Array.from(root.querySelectorAll(".badge"))
+      .map(b => b.textContent?.trim())
+      .filter(Boolean)
+      .filter(x => x.startsWith("ROLE_"));
+  }
+  function hasRole(r) { return getRolesFromPage().includes(r); }
+  function isAdmin()   { return hasRole("ROLE_ADMIN"); }
+  function isManager() { return hasRole("ROLE_MANAGER"); }
+
+  // ---- Helpers ----
+  function fmt(ts) { if (!ts) return ""; try { return new Date(ts).toLocaleString(); } catch { return ts; } }
+  function currentUsername() { return document.getElementById("username")?.textContent || "user"; }
+  function addIdentityHeaders(xhr) {
+    xhr.setRequestHeader("X-User", currentUsername());
+    xhr.setRequestHeader("X-Roles", getRolesFromPage().join(","));
+  }
+  function setAlert(msg, isError) {
+    $alert.toggleClass("text-danger", !!isError)
+          .toggleClass("text-secondary", !isError)
+          .text(msg || "");
+  }
+
+  // ---- Policy gates (client-side soft gates; server enforces critical ones) ----
+  function canApproveReject(t){ return isManager() && t.status === "SUBMITTED"; }
+
+  // Build dropdown with ALL statuses always visible
+  function optionList(current) {
+    return ALL_STATUSES.map(s => `<option value="${s}" ${s===current ? "selected":""}>${s}</option>`).join("");
+  }
+
+  // ---- API actions (status) ----
+  function approveTicket(id, note) {
+    setAlert(`Approving ticket #${id}…`);
+    $.ajax({
+      url: `${API_BASE}/${id}/approve?by=${encodeURIComponent(currentUsername())}&note=${encodeURIComponent(note||"")}`,
+      method: "PATCH",
+      beforeSend: addIdentityHeaders
+    })
+    .done(() => { setAlert(`Approved ticket #${id}.`); loadTickets(); })
+    .fail(xhr => failMsg("approve", xhr));
+  }
+
+  function rejectTicket(id, note) {
+    setAlert(`Rejecting ticket #${id}…`);
+    $.ajax({
+      url: `${API_BASE}/${id}/reject?by=${encodeURIComponent(currentUsername())}&note=${encodeURIComponent(note||"")}`,
+      method: "PATCH",
+      beforeSend: addIdentityHeaders
+    })
+    .done(() => { setAlert(`Rejected ticket #${id}.`); loadTickets(); })
+    .fail(xhr => failMsg("reject", xhr));
+  }
+
+  function updateStatus(id, status) {
+    if ((status === "APPROVED" || status === "REJECTED")) {
+      if (!isManager()) { return setAlert("Only managers can approve/reject.", true); }
+      return status === "APPROVED" ? approveTicket(id, "") : rejectTicket(id, "");
     }
-	
-	function addIdentityHeaders(xhr) {
-	  const user = document.getElementById("username")?.textContent || "user";
-	  const roles = getRolesFromPage().join(","); //"ROLE_USER,ROLE_MANAGER"
-	  xhr.setRequestHeader("X-User", user);
-	  xhr.setRequestHeader("X-Roles", roles);
-	}
-
-    function setAlert(msg, isError) {
-      $alert.toggleClass("text-danger", !!isError)
-            .toggleClass("text-secondary", !isError)
-            .text(msg || "");
+    if (status === "RESOLVED" && !isAdmin()) {
+      return setAlert("Only admins can resolve tickets.", true);
     }
+    setAlert(`Updating ticket #${id} → ${status}…`);
+    $.ajax({
+      url: `${API_BASE}/${id}/status?status=${encodeURIComponent(status)}&by=${encodeURIComponent(currentUsername())}`,
+      method: "PATCH",
+      beforeSend: addIdentityHeaders
+    })
+    .done(() => { setAlert(`Updated ticket #${id} to ${status}.`); loadTickets(); })
+    .fail(xhr => failMsg("update status", xhr));
+  }
 
-    function optionList(current) {
-      return STATUSES.map(s => `<option value="${s}" ${s===current ? "selected":""}>${s}</option>`).join("");
-    }
+  function failMsg(action, xhr) {
+    const msg = xhr.responseJSON?.message || xhr.responseText || `${xhr.status} ${xhr.statusText}`;
+    setAlert(`Failed to ${action}: ${msg}`, true);
+  }
 
-	function actionCell(ticket) {
-	  if (canApproveReject(ticket)) {
-	    const ph = `Note (optional)`;
-	    return `
-	      <div class="d-flex flex-wrap gap-2 align-items-center">
-	        <input type="text" class="form-control form-control-sm bg-black text-light border-secondary note-input"
-	               data-id="${ticket.id}" placeholder="${ph}" style="max-width: 220px;">
-	        <button class="btn btn-success btn-sm btn-approve" data-id="${ticket.id}">Approve</button>
-	        <button class="btn btn-outline-danger btn-sm btn-reject" data-id="${ticket.id}">Reject</button>
-	      </div>
-	    `;
-	  }
-	  // default (existing) status dropdown + Apply
-	  return `
-	    <div class="d-flex gap-2 align-items-center">
-	      <select class="form-select form-select-sm bg-black text-light border-secondary status-select"
-	              data-id="${ticket.id}">
-	        ${optionList(ticket.status)}
-	      </select>
-	      <button class="btn btn-outline-info btn-sm apply-status" data-id="${ticket.id}">Apply</button>
-	    </div>
-	  `;
-	}
+  // ---- Inline edit helpers ----
+  function enterEditMode($tr, ticket) {
+    if ($tr.data("editing")) return;
+    $tr.data("editing", true).addClass("edit-row-highlight");
 
-
-    function render(rows) {
-      $tableBody.empty();
-      if (!rows || rows.length === 0) {
-        $tableBody.append(`<tr><td colspan="7" class="text-center text-secondary">No tickets yet</td></tr>`);
-        return;
-      }
-      rows.forEach(t => {
-        $tableBody.append(`
-          <tr data-id="${t.id}">
-            <td>${t.id ?? ""}</td>
-            <td>${t.title ?? ""}</td>
-            <td><span class="badge text-bg-info">${t.status ?? ""}</span></td>
-            <td>${t.openedBy ?? ""}</td>
-            <td>${t.assignedTo ?? ""}</td>
-            <td>${fmt(t.createdAt)}</td>
-            <td>${actionCell(t)}</td>
-          </tr>
-        `);
-      });
-    }
-	
-	function currentUsername() {
-	  return document.getElementById("username")?.textContent || "manager";
-	}
-
-	function approveTicket(id, note) {
-	  setAlert(`Approving ticket #${id}…`);
-	  $.ajax({
-	    url: `${API_BASE}/${id}/approve?by=${encodeURIComponent(currentUsername())}&note=${encodeURIComponent(note || "")}`,
-	    method: "PATCH",
-	    beforeSend: addIdentityHeaders
-	  }).done(() => {
-	    setAlert(`Approved ticket #${id}.`);
-	    loadTickets();
-	  }).fail(xhr => {
-	    const msg = xhr.responseJSON?.message || xhr.responseText || `${xhr.status} ${xhr.statusText}`;
-	    setAlert(`Failed to approve: ${msg}`, true);
-	  });
-	}
-	
-	function isAdmin()   { return hasRole("ROLE_ADMIN"); }
-	function isManager() { return hasRole("ROLE_MANAGER"); }
-
-	function canApproveReject(ticket) {
-	  // Only managers, and only when ticket is SUBMITTED
-	  return isManager() && (ticket.status === "SUBMITTED");
-	}
-
-
-	function rejectTicket(id, note) {
-	  setAlert(`Rejecting ticket #${id}…`);
-	  $.ajax({
-	    url: `${API_BASE}/${id}/reject?by=${encodeURIComponent(currentUsername())}&note=${encodeURIComponent(note || "")}`,
-	    method: "PATCH",
-	    beforeSend: addIdentityHeaders
-	  }).done(() => {
-	    setAlert(`Rejected ticket #${id}.`);
-	    loadTickets();
-	  }).fail(xhr => {
-	    const msg = xhr.responseJSON?.message || xhr.responseText || `${xhr.status} ${xhr.statusText}`;
-	    setAlert(`Failed to reject: ${msg}`, true);
-	  });
-	}
-
-
-    function loadTickets() {
-      setAlert("Loading tickets…");
-      $.ajax({ 
-		url: API_BASE, 
-		method: "GET",
-		beforeSend: addIdentityHeaders })
-        .done(data => {
-          render(data);
-          setAlert(`Loaded ${Array.isArray(data) ? data.length : 0} ticket(s).`);
-        })
-        .fail(xhr => setAlert(`Failed to load tickets: ${xhr.status} ${xhr.statusText}`, true));
-    }
-
-	function createTicket(evt) {
-	  evt.preventDefault();
-	  const fd = new FormData();
-	  const titleVal = $("#title").val();
-	  const descVal  = $("#description").val();
-	  const file     = $("#attachment")[0].files[0];
-	  const openedBy = document.getElementById("username")?.textContent;
-
-	  if (!titleVal || titleVal.trim() === "") {
-	    setAlert("Title is required.", true);
-	    return;
-	  }
-
-	  fd.append("title", titleVal);
-	  if (descVal)  fd.append("description", descVal);
-	  if (openedBy) fd.append("openedBy", openedBy);
-	  if (file)     fd.append("file", file);
-
-	  setAlert("Creating ticket…");
-	  $.ajax({
-	    url: API_BASE,
-	    method: "POST",
-	    data: fd,
-	    processData: false,
-	    contentType: false,
-		beforeSend: addIdentityHeaders
-		  }).done(() => {
-	    $("#title").val(""); $("#description").val(""); $("#attachment").val("");
-	    setAlert("Ticket created.");
-	    loadTickets();
-	  }).fail(xhr => {
-	    const msg = xhr.responseJSON?.message || xhr.responseText || `${xhr.status} ${xhr.statusText}`;
-	    setAlert(`Failed to create ticket: ${msg}`, true);
-	  });
-	}
-	
-	function updateStatus(id, status) {
-	  const by = encodeURIComponent(currentUsername() || "system");
-
-	  // Managers use the dedicated endpoints
-	  if (status === "APPROVED" || status === "REJECTED") {
-	    if (!isManager()) { setAlert("Only managers can approve/reject.", true); return; }
-	    if (status === "APPROVED") { approveTicket(id, ""); return; }
-	    if (status === "REJECTED") { rejectTicket(id, ""); return; }
-	  }
-
-	  setAlert(`Updating ticket #${id} → ${status}…`);
-	  $.ajax({
-	    url: `${API_BASE}/${id}/status?status=${encodeURIComponent(status)}&by=${by}`,
-	    method: "PATCH",
-	    beforeSend: addIdentityHeaders
-	  })
-	  .done(() => { setAlert(`Updated ticket #${id} to ${status}.`); loadTickets(); })
-	  .fail(xhr => {
-	    const msg = xhr.responseJSON?.message || xhr.responseText || `${xhr.status} ${xhr.statusText}`;
-	    setAlert(`Failed to update status: ${msg}`, true);
-	  });
-	}
-	
-	function actionCell(ticket) {
-	  if (canApproveReject(ticket)) {
-	    const ph = `Note (optional)`;
-	    return `
-	      <div class="d-flex flex-wrap gap-2 align-items-center">
-	        <input type="text" class="form-control form-control-sm bg-black text-light border-secondary note-input"
-	               data-id="${ticket.id}" placeholder="${ph}" style="max-width: 220px;">
-	        <button class="btn btn-success btn-sm btn-approve" data-id="${ticket.id}">Approve</button>
-	        <button class="btn btn-outline-danger btn-sm btn-reject" data-id="${ticket.id}">Reject</button>
-	      </div>
-	    `;
-	  }
-	  // Everyone else: just the dropdown (without APPROVED/REJECTED for non-managers)
-	  return `
-	    <div class="d-flex gap-2 align-items-center">
-	      <select class="form-select form-select-sm bg-black text-light border-secondary status-select"
-	              data-id="${ticket.id}">
-	        ${optionList(ticket.status)}
-	      </select>
-	      <button class="btn btn-outline-info btn-sm apply-status" data-id="${ticket.id}">Apply</button>
-	    </div>
-	  `;
-	}
-
-	
-	function allowedTargetsForUser() {
-	  const canMgr  = hasRole("ROLE_MANAGER");
-	  const canAdm  = hasRole("ROLE_ADMIN");
-	  return [
-	    "OPEN",
-	    ...(canMgr ? ["IN_PROGRESS"] : []),
-	    ...(canAdm ? ["RESOLVED","CLOSED"] : [])
-	  ];
-	}
-
-    // Event wiring
-    $btnRefresh.on("click", loadTickets);
-    $form.on("submit", createTicket);
-
-    // Event delegation for per-row actions
-    $tableBody.on("click", ".apply-status", function () {
-      const id = $(this).data("id");
-      const sel = $tableBody.find(`select.status-select[data-id="${id}"]`);
-      const status = sel.val();
-      updateStatus(id, status);
+    // cache original content
+    $tr.data("orig", {
+      title: $tr.find("td.col-title").html(),
+      assigned: $tr.find("td.col-assigned").html(),
+      actions: $tr.find("td.col-actions").html()
     });
-	
-	// Approve
-	$tableBody.on("click", ".btn-approve", function () {
-	  const id = $(this).data("id");
-	  const note = $tableBody.find(`.note-input[data-id="${id}"]`).val();
-	  approveTicket(id, note);
-	});
 
-	// Reject
-	$tableBody.on("click", ".btn-reject", function () {
-	  const id = $(this).data("id");
-	  const note = $tableBody.find(`.note-input[data-id="${id}"]`).val();
-	  rejectTicket(id, note);
-	});
+    // replace title & assigned cells with inputs
+    $tr.find("td.col-title").html(`
+      <input type="text" class="form-control form-control-sm bg-black text-light border-secondary edit-title w-28rem" value="${escapeHtml(ticket.title || "")}">
+      <div class="small-muted mt-1">ID #${ticket.id}</div>
+    `);
 
-    // Initial load
-    $(loadTickets);
-  })();
+    $tr.find("td.col-assigned").html(`
+      <input type="text" class="form-control form-control-sm bg-black text-light border-secondary edit-assigned w-12rem" value="${escapeHtml(ticket.assignedTo || "")}" placeholder="Assignee">
+    `);
+
+    // actions area: show description editor + note + save/cancel
+    const descVal = ticket.description || "";
+    $tr.find("td.col-actions").html(`
+      <div class="d-flex flex-column gap-2">
+        <textarea class="form-control form-control-sm bg-black text-light border-secondary edit-desc w-28rem" rows="2" placeholder="Description (optional)">${escapeHtml(descVal)}</textarea>
+        <input type="text" class="form-control form-control-sm bg-black text-light border-secondary edit-note w-18rem" placeholder="History note (optional)">
+        <div class="d-flex flex-wrap gap-2">
+          <button class="btn btn-success btn-sm btn-save" data-id="${ticket.id}">Save</button>
+          <button class="btn btn-outline-light btn-sm btn-cancel">Cancel</button>
+        </div>
+      </div>
+    `);
+  }
+
+  function exitEditMode($tr) {
+    if (!$tr.data("editing")) return;
+    const orig = $tr.data("orig") || {};
+    $tr.find("td.col-title").html(orig.title ?? "");
+    $tr.find("td.col-assigned").html(orig.assigned ?? "");
+    $tr.find("td.col-actions").html(orig.actions ?? "");
+    $tr.removeClass("edit-row-highlight").data("editing", false);
+  }
+
+  function escapeHtml(s) {
+    return (s ?? "").toString().replace(/[&<>"']/g, m => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  }
+
+  // ---- Inline edit: save via PATCH /api/tickets/{id} ----
+  function saveInlineEdit($tr, ticketId) {
+    const title = $tr.find(".edit-title").val() ?? "";
+    const description = $tr.find(".edit-desc").val() ?? "";
+    const assignedTo = $tr.find(".edit-assigned").val() ?? "";
+    const note = $tr.find(".edit-note").val() ?? "";
+
+    const patch = {};
+    if (title.trim() !== "") patch.title = title.trim();
+    if (description.trim() !== "") patch.description = description.trim();
+    if (assignedTo.trim() !== "") patch.assignedTo = assignedTo.trim();
+
+    setAlert(`Saving changes to #${ticketId}…`);
+    $.ajax({
+      url: `${API_BASE}/${ticketId}?note=${encodeURIComponent(note)}`,
+      method: "PATCH",
+      data: JSON.stringify(patch),
+      contentType: "application/json",
+      beforeSend: addIdentityHeaders
+    })
+    .done(() => { setAlert(`Saved ticket #${ticketId}.`); loadTickets(); })
+    .fail(xhr => failMsg("save changes", xhr))
+    .always(() => exitEditMode($tr));
+  }
+
+  // ---- UI render ----
+  function actionCell(t){
+    const note = `
+      <input type="text" class="form-control form-control-sm bg-black text-light border-secondary note-input mb-2"
+             data-id="${t.id}" placeholder="Note (optional)" style="max-width: 260px;">
+    `;
+    const approveReject = canApproveReject(t) ? `
+      <div class="btn-group btn-group-sm me-2" role="group" aria-label="moderation">
+        <button class="btn btn-success btn-approve" data-id="${t.id}">Approve</button>
+        <button class="btn btn-outline-danger btn-reject" data-id="${t.id}">Reject</button>
+      </div>
+    ` : ``;
+
+    const dropdown = `
+      <div class="d-flex align-items-center gap-2 me-2">
+        <select class="form-select form-select-sm bg-black text-light border-secondary status-select" data-id="${t.id}">
+          ${optionList(t.status)}
+        </select>
+        <button class="btn btn-outline-info btn-sm apply-status" data-id="${t.id}">Apply</button>
+      </div>
+    `;
+
+    const editBtn = `<button class="btn btn-outline-light btn-sm btn-edit" data-id="${t.id}">Edit</button>`;
+
+    return `
+      <div class="d-flex flex-column">
+        ${note}
+        <div class="d-flex flex-wrap align-items-center">
+          ${approveReject}
+          ${dropdown}
+          ${editBtn}
+        </div>
+      </div>
+    `;
+  }
+
+  function render(rows) {
+    $tableBody.empty();
+    if (!rows || rows.length === 0) {
+      $tableBody.append(`<tr><td colspan="7" class="text-center text-secondary">No tickets yet</td></tr>`);
+      return;
+    }
+	 rows.forEach(t => {
+	    const $row = $(`
+	      <tr data-id="${t.id}">
+	        <td>${t.id ?? ""}</td>
+	        <td class="col-title">${t.title ? escapeHtml(t.title) : ""}</td>
+	        <td><span class="badge text-bg-info">${t.status ?? ""}</span></td>
+	        <td>${t.openedBy ? escapeHtml(t.openedBy) : ""}</td>
+	        <td class="col-assigned">${t.assignedTo ? escapeHtml(t.assignedTo) : ""}</td>
+	        <td>${fmt(t.createdAt)}</td>
+	        <td class="col-actions">${actionCell(t)}</td>
+	      </tr>
+	    `);
+
+	    $row.data("ticket", t);
+
+	    $tableBody.append($row);
+	  });
+	}
+
+  // ---- Load + create ----
+  function loadTickets() {
+    setAlert("Loading tickets…");
+    $.ajax({
+      url: API_BASE,
+      method: "GET",
+      beforeSend: addIdentityHeaders
+    })
+    .done(data => {
+      render(data);
+      setAlert(`Loaded ${Array.isArray(data) ? data.length : 0} ticket(s).`);
+    })
+    .fail(xhr => setAlert(`Failed to load tickets: ${xhr.status} ${xhr.statusText}`, true));
+  }
+
+  function createTicket(evt) {
+    evt.preventDefault();
+    const fd = new FormData();
+    const titleVal = $("#title").val();
+    const descVal  = $("#description").val();
+    const file     = $("#attachment")[0].files[0];
+    const openedBy = currentUsername();
+
+    if (!titleVal || titleVal.trim() === "") {
+      setAlert("Title is required.", true);
+      return;
+    }
+
+    fd.append("title", titleVal);
+    if (descVal)  fd.append("description", descVal);
+    if (openedBy) fd.append("openedBy", openedBy);
+    if (file)     fd.append("file", file);
+
+    setAlert("Creating ticket…");
+    $.ajax({
+      url: API_BASE,
+      method: "POST",
+      data: fd,
+      processData: false,
+      contentType: false,
+      beforeSend: addIdentityHeaders
+    })
+    .done(() => {
+      $("#title").val(""); $("#description").val(""); $("#attachment").val("");
+      setAlert("Ticket created.");
+      loadTickets();
+    })
+    .fail(xhr => {
+      const msg = xhr.responseJSON?.message || xhr.responseText || `${xhr.status} ${xhr.statusText}`;
+      setAlert(`Failed to create ticket: ${msg}`, true);
+    });
+  }
+
+  // ---- Events ----
+  $("#btn-refresh").on("click", loadTickets);
+  $("#create-ticket").on("submit", createTicket);
+
+  $tableBody.on("click", ".apply-status", function () {
+    const id = $(this).data("id");
+    const sel = $tableBody.find(`select.status-select[data-id="${id}"]`);
+    const status = sel.val();
+    updateStatus(id, status);
+  });
+
+  $tableBody.on("click", ".btn-approve", function () {
+    const id = $(this).data("id");
+    const note = $tableBody.find(`.note-input[data-id="${id}"]`).val();
+    approveTicket(id, note);
+  });
+
+  $tableBody.on("click", ".btn-reject", function () {
+    const id = $(this).data("id");
+    const note = $tableBody.find(`.note-input[data-id="${id}"]`).val();
+    rejectTicket(id, note);
+  });
+
+  // Inline edit: open
+  $tableBody.on("click", ".btn-edit", function () {
+    const $tr = $(this).closest("tr");
+    const t = $tr.data("ticket") || {};
+    enterEditMode($tr, t);
+  });
+
+  // Inline edit: cancel
+  $tableBody.on("click", ".btn-cancel", function () {
+    const $tr = $(this).closest("tr");
+    exitEditMode($tr);
+  });
+
+  // Inline edit: save
+  $tableBody.on("click", ".btn-save", function () {
+    const $tr = $(this).closest("tr");
+    const id = $(this).data("id");
+    saveInlineEdit($tr, id);
+  });
+
+  // Initial load
+  $(loadTickets);
+})();
 </script>
 </body>
 </html>
+
+

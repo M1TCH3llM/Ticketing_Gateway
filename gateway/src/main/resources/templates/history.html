@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org" data-bs-theme="dark">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Ticket History</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet"
+        integrity="sha384-QWTKZyjpPEjISv5WaRU9OFeRpok6YctnYmDr5pNlyT2bRjXh0JMhjY6hW+ALEwIH" crossorigin="anonymous">
+</head>
+<body class="bg-dark text-light">
+
+<nav class="navbar navbar-expand-lg navbar-dark bg-black border-bottom border-secondary">
+  <div class="container">
+    <a class="navbar-brand fw-semibold" href="/dashboard">Ticketing</a>
+    <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav"
+            aria-controls="nav" aria-expanded="false" aria-label="Toggle navigation">
+      <span class="navbar-toggler-icon"></span>
+    </button>
+    <div id="nav" class="collapse navbar-collapse">
+      <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+        <li class="nav-item"><a class="nav-link" href="/dashboard">Dashboard</a></li>
+        <li class="nav-item"><a class="nav-link active" href="/history">History</a></li>
+      </ul>
+      <div class="d-flex align-items-center gap-3">
+        <span class="text-secondary small">Signed in as
+          <span id="username" class="text-white fw-semibold" th:text="${username}">user</span>
+        </span>
+      
+        <a class="btn btn-outline-light btn-sm" href="/logout">Logout</a>
+      </div>
+    </div>
+  </div>
+</nav>
+
+<main class="container py-4">
+  <div class="d-flex justify-content-between align-items-center">
+    <h3 class="mb-0">Tickets</h3>
+    <button id="btn-refresh" class="btn btn-outline-light btn-sm">Refresh</button>
+  </div>
+  <p class="text-secondary small mb-3">Data from ticket-service (/api/tickets)</p>
+
+  <div class="card bg-dark border-secondary shadow-sm">
+    <div class="card-body">
+      <div class="table-responsive">
+        <table class="table table-dark table-striped align-middle mb-3" id="history-table">
+          <thead>
+          <tr>
+            <th style="width:72px">ID</th>
+            <th>Title</th>
+            <th>Status</th>
+            <th>Opened By</th>
+            <th>Assigned To</th>
+            <th>Created</th>
+            <th>Updated</th>
+            <th style="width:260px">Actions</th>
+          </tr>
+          </thead>
+          <tbody><!-- rows injected by JS --></tbody>
+        </table>
+      </div>
+      <div id="history-alert" class="text-secondary small"></div>
+    </div>
+  </div>
+</main>
+
+<!-- History modal -->
+<div class="modal fade" id="ticketHistoryModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-scrollable modal-lg">
+    <div class="modal-content bg-dark text-light border-secondary">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title">Ticket History <span class="text-secondary" id="modal-ticket-id">#</span></h5>
+
+        <!-- Sort toggle: Newest first (DESC) -->
+        <div class="form-check form-switch ms-3">
+          <input class="form-check-input" type="checkbox" id="toggle-history-desc" checked>
+          <label class="form-check-label small" for="toggle-history-desc">Newest first</label>
+        </div>
+
+        <button type="button" class="btn-close btn-close-white ms-2" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <ul id="history-list" class="list-group list-group-flush"><!-- items injected --></ul>
+      </div>
+      <div class="modal-footer border-secondary">
+        <button type="button" class="btn btn-outline-light" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"
+        integrity="sha384-YvpcrYf0tY3lHB60NNkmXc5s9fDVZLESaAA55NDzOxhy9GkcIdslK1eN7N6jIeHz"
+        crossorigin="anonymous"></script>
+<script src="https://code.jquery.com/jquery-3.7.1.min.js"
+        integrity="sha256-/JqT3SQfawRcv/BIHPThkBvs0OEvtFFmqPF/lYI/Cxo="
+        crossorigin="anonymous"></script>
+<script>
+(function () {
+  const API_BASE = "http://localhost:8081/api/tickets";
+
+  const $tbody = $("#history-table tbody");
+  const $alert = $("#history-alert");
+
+  // cache for modal re-sort
+  let _lastHistoryItems = [];
+  let _lastHistoryTicketId = null;
+
+  // ---- Roles (for identity header + optional UI tweaks) ----
+  function getRolesFromPage() {
+    const root = document.getElementById("roles-badges");
+    if (!root) return [];
+    return Array.from(root.querySelectorAll(".badge"))
+      .map(b => b.textContent?.trim())
+      .filter(Boolean)
+      .filter(x => x.startsWith("ROLE_"));
+  }
+  function addIdentityHeaders(xhr) {
+    const user = document.getElementById("username")?.textContent || "user";
+    const roles = getRolesFromPage().join(",");
+    xhr.setRequestHeader("X-User", user);
+    xhr.setRequestHeader("X-Roles", roles);
+  }
+  function currentUsername() {
+    return document.getElementById("username")?.textContent || "user";
+  }
+  function fmt(ts) { try { return ts ? new Date(ts).toLocaleString() : ""; } catch { return ts || ""; } }
+  function setAlert(msg, isError) {
+    $alert.toggleClass("text-danger", !!isError)
+          .toggleClass("text-secondary", !isError)
+          .text(msg || "");
+  }
+
+  // ---- Helpers for modal ----
+  function sortHistory(items, desc) {
+    const copy = [...items];
+    copy.sort((a, b) => {
+      const ta = a.changedAt ? new Date(a.changedAt).getTime() : 0;
+      const tb = b.changedAt ? new Date(b.changedAt).getTime() : 0;
+      return desc ? (tb - ta) : (ta - tb);
+    });
+    return copy;
+  }
+
+  function renderHistoryList(items) {
+    const $list = $("#history-list");
+    $list.empty();
+
+    if (!items.length) {
+      $list.append(`<li class="list-group-item bg-dark text-secondary border-secondary">No history entries.</li>`);
+      return;
+    }
+    items.forEach(h => {
+      $list.append(`
+        <li class="list-group-item bg-dark text-light border-secondary">
+          <div class="d-flex justify-content-between">
+            <div>
+              <span class="badge text-bg-info me-2">${h.status}</span>
+              <span class="text-white-50">${h.note ? h.note.replace(/</g,'&lt;') : ""}</span>
+            </div>
+            <small class="text-secondary">${fmt(h.changedAt)}</small>
+          </div>
+          <div class="text-secondary small">by ${h.changedBy || "system"}</div>
+        </li>
+      `);
+    });
+  }
+
+  // ---- API calls ----
+  function loadHistory() {
+    setAlert("Loading history…");
+    $.ajax({
+      url: `${API_BASE}`,
+      method: "GET",
+      beforeSend: addIdentityHeaders
+    })
+    .done(rows => {
+      render(rows || []);
+      setAlert(`Loaded ${Array.isArray(rows) ? rows.length : 0} ticket(s).`);
+    })
+    .fail(xhr => {
+      const msg = xhr.responseJSON?.message || xhr.responseText || `${xhr.status} ${xhr.statusText}`;
+      setAlert(`Failed to load history: ${msg}`, true);
+    });
+  }
+
+  function fetchTicketHistory(id) {
+    setAlert(`Loading history for #${id}…`);
+    $.ajax({
+      url: `${API_BASE}/${id}/history`,
+      method: "GET",
+      beforeSend: addIdentityHeaders
+    })
+    .done(items => showHistoryModal(id, items || []))
+    .fail(xhr => {
+      const msg = xhr.responseJSON?.message || xhr.responseText || `${xhr.status} ${xhr.statusText}`;
+      setAlert(`Failed to load ticket history: ${msg}`, true);
+    });
+  }
+
+  function reopenTicket(id) {
+    setAlert(`Reopening ticket #${id}…`);
+    $.ajax({
+      url: `${API_BASE}/${id}/reopen?by=${encodeURIComponent(currentUsername())}`,
+      method: "PATCH",
+      beforeSend: addIdentityHeaders
+    })
+    .done(() => {
+      setAlert(`Reopened ticket #${id}.`);
+      loadHistory(); 
+    })
+    .fail(xhr => {
+      const msg = xhr.responseJSON?.message || xhr.responseText || `${xhr.status} ${xhr.statusText}`;
+      setAlert(`Failed to reopen: ${msg}`, true);
+    });
+  }
+
+  // ---- UI render ----
+  function rowActions(t) {
+    return `
+      <div class="d-flex flex-wrap gap-2">
+        <button class="btn btn-outline-light btn-sm view-history" data-id="${t.id}">View History</button>
+        <button class="btn btn-outline-warning btn-sm reopen-ticket" data-id="${t.id}">Reopen</button>
+      </div>
+    `;
+  }
+
+  function render(rows) {
+    $tbody.empty();
+    if (!rows.length) {
+      $tbody.append(`<tr><td colspan="8" class="text-center text-secondary">No closed tickets</td></tr>`);
+      return;
+    }
+    rows.forEach(t => {
+      $tbody.append(`
+        <tr data-id="${t.id}">
+          <td>${t.id ?? ""}</td>
+          <td>${t.title ?? ""}</td>
+          <td><span class="badge text-bg-secondary">${t.status ?? ""}</span></td>
+          <td>${t.openedBy ?? ""}</td>
+          <td>${t.assignedTo ?? ""}</td>
+          <td>${fmt(t.createdAt)}</td>
+          <td>${fmt(t.updatedAt)}</td>
+          <td>${rowActions(t)}</td>
+        </tr>
+      `);
+    });
+  }
+
+  function showHistoryModal(id, items) {
+    _lastHistoryTicketId = id;
+    _lastHistoryItems = Array.isArray(items) ? items : [];
+
+    $("#modal-ticket-id").text(`#${id}`);
+
+    const desc = $("#toggle-history-desc").is(":checked");
+    const sorted = sortHistory(_lastHistoryItems, desc);
+    renderHistoryList(sorted);
+
+    // rebind toggle handler
+    $("#toggle-history-desc").off("change").on("change", function () {
+      const isDesc = $(this).is(":checked");
+      renderHistoryList(sortHistory(_lastHistoryItems, isDesc));
+    });
+
+    const modal = new bootstrap.Modal(document.getElementById("ticketHistoryModal"));
+    modal.show();
+    setAlert(""); // clear footer alert
+  }
+
+  // ---- Events ----
+  $("#btn-refresh").on("click", loadHistory);
+
+  $("#history-table").on("click", ".view-history", function () {
+    const id = $(this).data("id");
+    fetchTicketHistory(id);
+  });
+
+  $("#history-table").on("click", ".reopen-ticket", function () {
+    const id = $(this).data("id");
+    reopenTicket(id);
+  });
+
+  // Initial load
+  $(loadHistory);
+})();
+</script>
+</body>
+</html>
+
+

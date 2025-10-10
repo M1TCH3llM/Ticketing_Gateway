@@ -1,7 +1,5 @@
 package com.ticketing.ticket.domain;
 
-
-
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -26,7 +24,7 @@ public class Ticket {
 
     @Column(columnDefinition = "TEXT")
     private String description;
-    
+
     @Column(name = "attachment_name")
     private String attachmentName;
 
@@ -56,16 +54,55 @@ public class Ticket {
     @Column(nullable = false)
     private Instant updatedAt;
 
+    /** Updated whenever there is any activity on the ticket (status change, comment, assign, etc.). */
+    @Column(nullable = false)
+    private Instant lastTouchedAt;
+
+    /** Set when status first becomes RESOLVED; cleared if REOPENED. Used for the 5-day auto-close. */
+    private Instant resolvedAt;
+
     @PrePersist
     void onCreate() {
         var now = Instant.now();
         createdAt = now;
         updatedAt = now;
+        lastTouchedAt = now;
         if (status == null) status = TicketStatus.SUBMITTED;
     }
 
     @PreUpdate
     void onUpdate() {
         updatedAt = Instant.now();
+        // Intentionally NOT auto-updating lastTouchedAt here.
+        // Services should call touch() only when there is real activity.
+    }
+
+    /** Call this in service methods whenever there is user/system activity on the ticket. */
+    public void touch() {
+        this.lastTouchedAt = Instant.now();
+    }
+
+    /** Transition helpers (optional but make services cleaner). */
+    public void markInProgress() {
+        this.status = TicketStatus.IN_PROGRESS;
+        touch();
+    }
+
+    public void markResolved() {
+        this.status = TicketStatus.RESOLVED;
+        this.resolvedAt = Instant.now();
+        touch();
+    }
+
+    public void markClosed() {
+        this.status = TicketStatus.CLOSED;
+        touch();
+    }
+
+    public void markReopened() {
+        this.status = TicketStatus.REOPENED;
+        this.resolvedAt = null; // resolution no longer current
+        touch();
     }
 }
+

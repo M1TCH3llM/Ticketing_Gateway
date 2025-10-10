@@ -180,6 +180,136 @@ public class NotificationServiceApplication {
 			System.err.println("Failed to send resolved email/PDF: " + e.getMessage());
 		}
 	}
+	
+	@JmsListener(destination = "ticket.assigned")
+	public void onTicketAssigned(Map<String, Object> p) {
+	    long id = num(p.get("ticketId"));
+	    String subject = "[Ticketing] Ticket #" + id + " assigned";
+	    String to = strOr(p.get("assignedTo"), props.getMail().getManagerEmail());
+	    String body = """
+	        A ticket has been assigned.
+
+	        Ticket: #%d — %s
+	        Opened By: %s
+	        Assigned To: %s
+	        Actioned By: %s
+	        When: %s
+
+	        View in app: %s/tickets/%d
+	        """.formatted(
+	        id,
+	        strOr(p.get("title"), "(no title)"),
+	        strOr(p.get("openedBy"), "(unknown)"),
+	        strOr(p.get("assignedTo"), "(unassigned)"),
+	        strOr(p.get("actor"), "(system)"),
+	        strOr(p.get("at"), nowIso()),
+	        props.getTicket().getServiceBaseUrl(), id
+	    );
+
+	    SimpleMailMessage msg = new SimpleMailMessage();
+	    msg.setFrom(props.getMail().getFrom());
+	    msg.setTo(to);
+	    msg.setSubject(subject);
+	    msg.setText(body);
+	    try { mail.send(msg); } catch (Exception ex) {
+	        System.err.println("Failed to send assignment email: " + ex.getMessage());
+	    }
+	}
+
+	// ===================== NEW: REJECTED (reason to requester) =====================
+	@JmsListener(destination = "ticket.rejected")
+	public void onTicketRejected(Map<String, Object> p) {
+	    long id = num(p.get("ticketId"));
+	    String to = strOr(p.get("openedBy"), props.getMail().getManagerEmail());
+	    String subject = "[Ticketing] Ticket #" + id + " was rejected";
+	    String body = """
+	        Your ticket has been rejected.
+
+	        Ticket: #%d — %s
+	        Reason: %s
+	        By: %s
+	        When: %s
+
+	        You can reply to this email or reopen in the app.
+	        """.formatted(
+	        id,
+	        strOr(p.get("title"), "(no title)"),
+	        strOr(p.get("reason"), "(no reason provided)"),
+	        strOr(p.get("actor"), "(system)"),
+	        strOr(p.get("at"), nowIso())
+	    );
+
+	    SimpleMailMessage msg = new SimpleMailMessage();
+	    msg.setFrom(props.getMail().getFrom());
+	    msg.setTo(to);
+	    msg.setSubject(subject);
+	    msg.setText(body);
+	    try { mail.send(msg); } catch (Exception ex) {
+	        System.err.println("Failed to send rejection email: " + ex.getMessage());
+	    }
+	}
+
+	// ===================== NEW: AUTO-CLOSE (stale > 7d) =====================
+	@JmsListener(destination = "ticket.autoclose.stale")
+	public void onAutoCloseStale(Map<String, Object> p) {
+	    long id = num(p.get("ticketId"));
+	    String to = strOr(p.get("openedBy"), props.getMail().getManagerEmail());
+	    String subject = "[Ticketing] Ticket #" + id + " auto-closed (no recent activity)";
+	    String body = """
+	        Your ticket has been automatically closed because there has been no activity for 7 days.
+
+	        Ticket: #%d — %s
+	        Last Activity: %s
+	        Auto-Closed: %s
+
+	        If you still need help, you can reopen it in the app.
+	        """.formatted(
+	        id,
+	        strOr(p.get("title"), "(no title)"),
+	        strOr(p.get("lastTouchedAt"), "(unknown)"),
+	        strOr(p.get("autoClosedAt"), nowIso())
+	    );
+
+	    SimpleMailMessage msg = new SimpleMailMessage();
+	    msg.setFrom(props.getMail().getFrom());
+	    msg.setTo(to);
+	    msg.setSubject(subject);
+	    msg.setText(body);
+	    try { mail.send(msg); } catch (Exception ex) {
+	        System.err.println("Failed to send stale autoclose email: " + ex.getMessage());
+	    }
+	}
+
+	// ===================== NEW: AUTO-CLOSE (5d after RESOLVED) =====================
+	@JmsListener(destination = "ticket.autoclose.afterResolved")
+	public void onAutoCloseAfterResolved(Map<String, Object> p) {
+	    long id = num(p.get("ticketId"));
+	    String to = strOr(p.get("openedBy"), props.getMail().getManagerEmail());
+	    String subject = "[Ticketing] Ticket #" + id + " auto-closed after resolution";
+	    String body = """
+	        Your ticket was resolved and has been automatically closed after 5 days.
+
+	        Ticket: #%d — %s
+	        Resolved At: %s
+	        Auto-Closed: %s
+
+	        If something's still off, you can reopen it in the app.
+	        """.formatted(
+	        id,
+	        strOr(p.get("title"), "(no title)"),
+	        strOr(p.get("resolvedAt"), "(unknown)"),
+	        strOr(p.get("autoClosedAt"), nowIso())
+	    );
+
+	    SimpleMailMessage msg = new SimpleMailMessage();
+	    msg.setFrom(props.getMail().getFrom());
+	    msg.setTo(to);
+	    msg.setSubject(subject);
+	    msg.setText(body);
+	    try { mail.send(msg); } catch (Exception ex) {
+	        System.err.println("Failed to send after-resolved autoclose email: " + ex.getMessage());
+	    }
+	}
 
 	// =============================================================================
 	//  SCHEDULED TASKS

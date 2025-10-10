@@ -9,6 +9,7 @@ import com.ticketing.ticket.repo.TicketRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Instant;
 import java.util.*;
 
 @Service
@@ -28,11 +29,14 @@ public class TicketServiceImpl implements TicketService {
     }
 
     private static Comparator<Ticket> defaultSort() {
-        // Prefer createdAt desc if present, otherwise id desc
         return Comparator
-            .comparing(Ticket::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())).reversed()
-            .thenComparing(Ticket::getId, Comparator.nullsLast(Comparator.naturalOrder())).reversed();
+                .comparing(Ticket::getCreatedAt, Comparator.nullsLast(Comparator.naturalOrder())).reversed()
+                .thenComparing(Ticket::getId, Comparator.nullsLast(Comparator.naturalOrder())).reversed();
     }
+
+    // -----------------------------------------------------------------------
+    // Queries
+    // -----------------------------------------------------------------------
 
     @Override
     @Transactional(readOnly = true)
@@ -46,154 +50,9 @@ public class TicketServiceImpl implements TicketService {
         return repo.findById(id);
     }
 
-    @Override
-    public Ticket create(Ticket incoming) {
-        if (incoming.getTitle() == null || incoming.getTitle().isBlank()) {
-            throw new IllegalArgumentException("title is required");
-        }
-        if (incoming.getStatus() == null) incoming.setStatus(TicketStatus.SUBMITTED);
-
-        var saved = repo.save(incoming);
-
-        // history: initial creation
-        historyRepo.save(
-            TicketHistory.builder()
-                .ticketId(saved.getId())
-                .status(saved.getStatus())
-                .changedBy(saved.getOpenedBy())
-                .note("Created")
-                .build()
-        );
-
-        // JMS: ticket.created
-        events.ticketCreated(commonPayload(saved));
-
-        return saved;
-    }
-
-    @Override
-    public Optional<Ticket> updateStatus(Long id, TicketStatus status, String changedBy, String note) {
-        return repo.findById(id).map(t -> {
-            t.setStatus(status);
-            var updated = repo.save(t);
-
-            historyRepo.save(
-                TicketHistory.builder()
-                    .ticketId(updated.getId())
-                    .status(updated.getStatus())
-                    .changedBy(
-                        (changedBy != null && !changedBy.isBlank())
-                            ? changedBy
-                            : (updated.getAssignedTo() != null ? updated.getAssignedTo() : "system")
-                    )
-                    .note((note != null && !note.isBlank()) ? note : ("Status changed to " + status))
-                    .build()
-            );
-
-            // JMS: ticket.resolved when entering RESOLVED
-            if (status == TicketStatus.RESOLVED) {
-                Map<String, Object> payload = commonPayload(updated);
-                payload.put("resolvedAt", updated.getUpdatedAt() != null ? updated.getUpdatedAt().toString() : null);
-                if (note != null && !note.isBlank()) payload.put("note", note);
-                events.ticketResolved(payload);
-            }
-
-            return updated;
-        });
-    }
-
     @Transactional(readOnly = true)
     public List<TicketHistory> historyFor(Long ticketId) {
         return historyRepo.findByTicketIdOrderByChangedAtAsc(ticketId);
-    }
-
-    @Override
-    public Ticket save(Ticket t) {
-        return repo.save(t);
-    }
-
-    @Override
-    public Optional<Ticket> approve(Long id, String manager, String note) {
-        return repo.findById(id).map(t -> {
-            if (t.getStatus() != TicketStatus.SUBMITTED) {
-                throw new IllegalStateException("Only SUBMITTED tickets can be approved");
-            }
-            t.setStatus(TicketStatus.APPROVED);
-            var updated = repo.save(t);
-
-            historyRepo.save(
-                TicketHistory.builder()
-                    .ticketId(updated.getId())
-                    .status(updated.getStatus())
-                    .changedBy(manager)
-                    .note((note == null || note.isBlank()) ? "Approved" : note)
-                    .build()
-            );
-
-            return updated;
-        });
-    }
-
-    @Override
-    public Optional<Ticket> reject(Long id, String manager, String note) {
-        return repo.findById(id).map(t -> {
-            if (t.getStatus() != TicketStatus.SUBMITTED) {
-                throw new IllegalStateException("Only SUBMITTED tickets can be rejected");
-            }
-            t.setStatus(TicketStatus.REJECTED);
-            var updated = repo.save(t);
-
-            historyRepo.save(
-                TicketHistory.builder()
-                    .ticketId(updated.getId())
-                    .status(updated.getStatus())
-                    .changedBy(manager)
-                    .note((note == null || note.isBlank()) ? "Rejected" : note)
-                    .build()
-            );
-
-            return updated;
-        });
-    }
-
-    @Override
-    public Optional<Ticket> close(Long id, String by, String note) {
-        return repo.findById(id).map(t -> {
-            if (t.getStatus() == TicketStatus.CLOSED) {
-                throw new IllegalStateException("Ticket already CLOSED");
-            }
-            t.setStatus(TicketStatus.CLOSED);
-            var updated = repo.save(t);
-            historyRepo.save(
-                TicketHistory.builder()
-                    .ticketId(updated.getId())
-                    .status(updated.getStatus())
-                    .changedBy(by)
-                    .note((note == null || note.isBlank()) ? "Closed" : note)
-                    .build()
-            );
-            return updated;
-        });
-    }
-
-    @Override
-    public Optional<Ticket> reopen(Long id, String by, String note) {
-        return repo.findById(id).map(t -> {
-            if (t.getStatus() != TicketStatus.RESOLVED && t.getStatus() != TicketStatus.CLOSED) {
-                throw new IllegalStateException("Only RESOLVED or CLOSED tickets can be reopened");
-            }
-            t.setStatus(TicketStatus.REOPENED);
-            var updated = repo.save(t);
-            historyRepo.save(
-                TicketHistory.builder()
-                    .ticketId(updated.getId())
-                    .status(updated.getStatus())
-                    .changedBy(by)
-                    .note((note == null || note.isBlank()) ? "Reopened" : note)
-                    .build()
-            );
-            return updated;
-        });
     }
 
     @Transactional(readOnly = true)
@@ -212,11 +71,193 @@ public class TicketServiceImpl implements TicketService {
         return list;
     }
 
-    // ---- Simple field patch (title/description/assignedTo) with history ----
+    // -----------------------------------------------------------------------
+    // Commands
+    // -----------------------------------------------------------------------
+
+    @Override
+    public Ticket create(Ticket incoming) {
+        if (incoming.getTitle() == null || incoming.getTitle().isBlank()) {
+            throw new IllegalArgumentException("title is required");
+        }
+        if (incoming.getStatus() == null) incoming.setStatus(TicketStatus.SUBMITTED);
+
+        var saved = repo.save(incoming);
+
+        // history
+        historyRepo.save(TicketHistory.builder()
+                .ticketId(saved.getId())
+                .status(saved.getStatus())
+                .changedBy(saved.getOpenedBy())
+                .note("Created")
+                .build());
+
+        // JMS: ticket.created
+        events.ticketCreated(commonPayload(saved));
+
+        return saved;
+    }
+
+    @Override
+    public Optional<Ticket> updateStatus(Long id, TicketStatus status, String changedBy, String note) {
+        return repo.findById(id).map(t -> {
+            // Apply transition (+touch)
+            if (status == TicketStatus.RESOLVED) {
+                t.markResolved();
+            } else if (status == TicketStatus.CLOSED) {
+                t.markClosed();
+            } else if (status == TicketStatus.REOPENED) {
+                t.markReopened();
+            } else {
+                t.setStatus(status);
+                t.touch();
+            }
+
+            var updated = repo.save(t);
+
+            // History
+            historyRepo.save(TicketHistory.builder()
+                    .ticketId(updated.getId())
+                    .status(updated.getStatus())
+                    .changedBy(actorFor(updated, changedBy))
+                    .note((note != null && !note.isBlank()) ? note : ("Status changed to " + status))
+                    .build());
+
+            // Messaging: on RESOLVED -> email + delayed autoclose
+            if (status == TicketStatus.RESOLVED) {
+                Instant resolvedAt = (updated.getResolvedAt() != null) ? updated.getResolvedAt() : Instant.now();
+
+                events.resolved(
+                        updated.getId(),
+                        updated.getTitle(),
+                        updated.getOpenedBy(),
+                        (note == null || note.isBlank()) ? null : note, // resolutionDetails
+                        null, // pdfPath (optional later)
+                        null, // pdfName
+                        actorFor(updated, changedBy),
+                        resolvedAt
+                );
+
+                // Schedule the delayed command to close after 5 days if still not CLOSED
+                events.scheduleAutoCloseAfterResolved(
+                        updated.getId(),
+                        updated.getTitle(),
+                        updated.getOpenedBy(),
+                        resolvedAt
+                );
+            }
+
+            return updated;
+        });
+    }
+
+    @Override
+    public Ticket save(Ticket t) {
+        return repo.save(t);
+    }
+
+    @Override
+    public Optional<Ticket> approve(Long id, String manager, String note) {
+        return repo.findById(id).map(t -> {
+            if (t.getStatus() != TicketStatus.SUBMITTED) {
+                throw new IllegalStateException("Only SUBMITTED tickets can be approved");
+            }
+            t.setStatus(TicketStatus.APPROVED);
+            t.touch();
+            var updated = repo.save(t);
+
+            historyRepo.save(TicketHistory.builder()
+                    .ticketId(updated.getId())
+                    .status(updated.getStatus())
+                    .changedBy(nonBlankOr(manager, "system"))
+                    .note((note == null || note.isBlank()) ? "Approved" : note)
+                    .build());
+
+            return updated;
+        });
+    }
+
+    @Override
+    public Optional<Ticket> reject(Long id, String manager, String note) {
+        return repo.findById(id).map(t -> {
+            if (t.getStatus() != TicketStatus.SUBMITTED) {
+                throw new IllegalStateException("Only SUBMITTED tickets can be rejected");
+            }
+            t.setStatus(TicketStatus.REJECTED);
+            t.touch();
+            var updated = repo.save(t);
+
+            String reason = (note == null || note.isBlank()) ? "Rejected" : note;
+
+            historyRepo.save(TicketHistory.builder()
+                    .ticketId(updated.getId())
+                    .status(updated.getStatus())
+                    .changedBy(nonBlankOr(manager, "system"))
+                    .note(reason)
+                    .build());
+
+            // JMS: notify requester with reason
+            events.rejected(
+                    updated.getId(),
+                    updated.getTitle(),
+                    updated.getOpenedBy(),
+                    reason,
+                    nonBlankOr(manager, "system")
+            );
+
+            return updated;
+        });
+    }
+
+    @Override
+    public Optional<Ticket> close(Long id, String by, String note) {
+        return repo.findById(id).map(t -> {
+            if (t.getStatus() == TicketStatus.CLOSED) {
+                throw new IllegalStateException("Ticket already CLOSED");
+            }
+            t.markClosed();
+            var updated = repo.save(t);
+
+            historyRepo.save(TicketHistory.builder()
+                    .ticketId(updated.getId())
+                    .status(updated.getStatus())
+                    .changedBy(nonBlankOr(by, "system"))
+                    .note((note == null || note.isBlank()) ? "Closed" : note)
+                    .build());
+
+            return updated;
+        });
+    }
+
+    @Override
+    public Optional<Ticket> reopen(Long id, String by, String note) {
+        return repo.findById(id).map(t -> {
+            if (t.getStatus() != TicketStatus.RESOLVED && t.getStatus() != TicketStatus.CLOSED) {
+                throw new IllegalStateException("Only RESOLVED or CLOSED tickets can be reopened");
+            }
+            t.markReopened();
+            var updated = repo.save(t);
+
+            historyRepo.save(TicketHistory.builder()
+                    .ticketId(updated.getId())
+                    .status(updated.getStatus())
+                    .changedBy(nonBlankOr(by, "system"))
+                    .note((note == null || note.isBlank()) ? "Reopened" : note)
+                    .build());
+
+            return updated;
+        });
+    }
+
+    // -----------------------------------------------------------------------
+    // Patch fields (title/description/assignedTo)
+    // -----------------------------------------------------------------------
+
     @Override
     public Optional<Ticket> updateFields(Long id, Ticket patch, String changedBy, String note) {
         return repo.findById(id).map(t -> {
             List<String> changed = new ArrayList<>();
+            String prevAssigned = t.getAssignedTo();
 
             if (patch.getTitle() != null && !Objects.equals(patch.getTitle(), t.getTitle())) {
                 t.setTitle(patch.getTitle());
@@ -231,30 +272,69 @@ public class TicketServiceImpl implements TicketService {
                 changed.add("assignedTo");
             }
 
+            if (!changed.isEmpty()) t.touch();
+
             var updated = repo.save(t);
 
             String historyNote = (note != null && !note.isBlank())
                     ? note
                     : (changed.isEmpty() ? "Edited" : "Edited: " + String.join(", ", changed));
 
-            historyRepo.save(
-                TicketHistory.builder()
+            historyRepo.save(TicketHistory.builder()
                     .ticketId(updated.getId())
                     .status(updated.getStatus())
-                    .changedBy(
-                        (changedBy != null && !changedBy.isBlank())
-                            ? changedBy
-                            : (updated.getAssignedTo() != null ? updated.getAssignedTo() : "system")
-                    )
+                    .changedBy(actorFor(updated, changedBy))
                     .note(historyNote)
-                    .build()
-            );
+                    .build());
+
+            // If assignment changed, publish assignment email event once (after save)
+            if (!Objects.equals(prevAssigned, updated.getAssignedTo()) && updated.getAssignedTo() != null) {
+                events.assignment(
+                        updated.getId(),
+                        updated.getTitle(),
+                        updated.getOpenedBy(),
+                        updated.getAssignedTo(),
+                        actorFor(updated, changedBy)
+                );
+            }
 
             return updated;
         });
     }
 
-    // ---- shared payload for JMS ----
+    // -----------------------------------------------------------------------
+    // Auto-close stale (7 days untouched) — called by your scheduler
+    // -----------------------------------------------------------------------
+
+    @Override
+    public void autoCloseStale(Ticket t) {
+        if (t.getStatus() == TicketStatus.CLOSED) return; // already closed
+
+        t.markClosed();
+        var closed = repo.save(t);
+
+        historyRepo.save(TicketHistory.builder()
+                .ticketId(closed.getId())
+                .status(closed.getStatus())
+                .changedBy("system")
+                .note("Auto-closed: untouched > 7 days")
+                .build());
+
+        // Notify requester
+        Instant lastTouched = (closed.getLastTouchedAt() != null) ? closed.getLastTouchedAt() : closed.getUpdatedAt();
+        events.autoCloseStale(
+                closed.getId(),
+                closed.getTitle(),
+                closed.getOpenedBy(),
+                Instant.now(),
+                lastTouched
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // helpers
+    // -----------------------------------------------------------------------
+
     private Map<String, Object> commonPayload(Ticket t) {
         Map<String, Object> m = new HashMap<>();
         m.put("id", t.getId());
@@ -266,6 +346,16 @@ public class TicketServiceImpl implements TicketService {
         m.put("updatedAt", t.getUpdatedAt() != null ? t.getUpdatedAt().toString() : null);
         m.put("description", t.getDescription());
         return m;
+    }
+
+    private static String nonBlankOr(String s, String def) {
+        return (s != null && !s.isBlank()) ? s : def;
+    }
+
+    private static String actorFor(Ticket t, String changedBy) {
+        if (changedBy != null && !changedBy.isBlank()) return changedBy;
+        if (t.getAssignedTo() != null && !t.getAssignedTo().isBlank()) return t.getAssignedTo();
+        return "system";
     }
 }
 

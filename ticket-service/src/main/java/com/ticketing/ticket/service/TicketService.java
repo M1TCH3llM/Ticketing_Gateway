@@ -30,6 +30,9 @@ public interface TicketService {
 
     List<Ticket> findActive();
     List<Ticket> findHistory();
+    
+    // cron 
+	void autoCloseStale(Ticket t);
 
     
 }

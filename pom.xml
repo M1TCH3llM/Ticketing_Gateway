@@ -49,11 +49,11 @@
 
          <distributionManagement>
            <repository>
-                     <id>team-synergistic-releases</id>
+                     <id>Test_Maven_Service</id>
                      <url>http://16.16.96.149:8081/repository/team-synergistic-releases/</url>
            </repository>
            <snapshotRepository>
-                     <id>team-synergistic-snapshots</id>
+                     <id>Test_Maven_Service</id>
                      <url>http://16.16.96.149:8081/repository/team-synergistic-snapshots/</url>
            </snapshotRepository>
           </distributionManagement>
